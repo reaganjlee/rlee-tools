@@ -2,16 +2,6 @@
 """
 vLLM Git Bisect Verification Script
 
-Detects memory leaks by comparing RAM growth rates: if the growth rate decreases
-over time, memory is stabilizing (good). If growth rate stays high, there's a
-leak (bad).
-
-Algorithm:
-1. Warmup phase (first N runs): Calculate initial growth rate
-2. Test phase (subsequent runs): Track RAM and calculate recent growth rate
-3. Comparison: If recent_growth_rate < initial_growth_rate * threshold -> GOOD
-   If recent_growth_rate >= initial_growth_rate * threshold -> BAD (leak)
-
 Usage:
     # Binary search through filtered commits (recommended)
     python bisect_verify.py --bisect
@@ -24,15 +14,6 @@ Usage:
 
     # Test current HEAD
     python bisect_verify.py
-
-    # Test with custom benchmark duration (10 minutes)
-    python bisect_verify.py --benchmark-duration 600
-
-    # Customize warmup runs and growth rate threshold
-    python bisect_verify.py --warmup-runs 5 --growth-rate-threshold 0.3
-
-    # Fail if RAM exceeds 32GB (optional hard limit)
-    python bisect_verify.py --ram-threshold 32
 
     # Test with multimodal processor cache disabled
     python bisect_verify.py --bisect --disable-mm-cache
@@ -47,9 +28,6 @@ Notes:
     - Results are saved to bisect_results.csv
     - Detailed logs are saved to logs/<short_hash>.log
     - Use --disable-mm-cache to test with --mm-processor-cache-gb 0
-    - Pass/fail is determined by growth rate stabilization:
-      * GOOD: Growth rate decreased (memory stabilizing) or initial rate < 10 MB/run
-      * BAD: Growth rate stayed high (memory leak detected)
 """
 
 import argparse
@@ -71,59 +49,32 @@ import requests
 BASE_SERVER_CMD = [
     "vllm", "serve", "Qwen/Qwen2.5-VL-3B-Instruct",
     "--limit-mm-per-prompt.video", "0",
-    "--gpu-memory-utilization", "0.35",
-    "--max-model-len", "2048",
-    "--override-generation-config", '{"max_new_tokens": 1}'
+    "--max-model-len", "25000"
 ]
 BENCHMARK_CMD = [
     "vllm", "bench", "serve",
     "--backend", "openai-chat",
     "--model", "Qwen/Qwen2.5-VL-3B-Instruct",
     "--endpoint", "/v1/chat/completions",
-    "--dataset-name", "random-mm",
-    # "--dataset-name", "hf",
-    # "--dataset-path", "lmarena-ai/VisionArena-Chat",
-    # "--hf-split", "train",
+    "--dataset-name", "hf",
+    "--dataset-path", "lmarena-ai/VisionArena-Chat",
+    "--hf-split", "train",
     "--num-prompts", "1000"
 ]
 
 # Global flags for mm processor cache (set by command line)
 DISABLE_MM_CACHE = False
 USE_DEPRECATED_MM_FLAG = False
-MOCK_ENCODER = False  # Mock vision encoder for faster testing
 SERVER_HEALTH_URL = "http://localhost:8000/health"
-SERVER_STARTUP_TIMEOUT = 120  # 2 minutes for model download/load
+SERVER_STARTUP_TIMEOUT = 600  # 10 minutes for model download/load
 BENCHMARK_TIMEOUT = 300
 BENCHMARK_TIMEOUT_MM_CACHE_DISABLED = 600  # 10 minutes when mm cache is disabled
 DEFAULT_REQUIRED_RUNS = 6
 REQUIRED_SUCCESSFUL_RUNS = 6  # Can be overridden by --num-runs
 RAM_THRESHOLD_MB = 32 * 1024  # 32GB - fail if RAM exceeds this
-
-# Time-based benchmark settings
-DEFAULT_BENCHMARK_DURATION_SEC = 300  # 5 minutes of benchmarking
-BENCHMARK_DURATION_SEC = DEFAULT_BENCHMARK_DURATION_SEC
-RAM_SETTLE_WAIT_SEC = 30  # Wait time after benchmarks to check if RAM decreases
-RAM_DECREASE_THRESHOLD_PERCENT = 1  # Expect at least 1% decrease if memory is being freed
-
-# Growth rate stabilization settings
-DEFAULT_WARMUP_RUNS = 3  # Number of initial runs for baseline growth rate
-WARMUP_RUNS = DEFAULT_WARMUP_RUNS
-DEFAULT_GROWTH_RATE_THRESHOLD = 0.5  # Growth rate must decrease to 50% of initial
-GROWTH_RATE_THRESHOLD = DEFAULT_GROWTH_RATE_THRESHOLD
-MIN_GROWTH_RATE_MB = 10  # If initial growth < this MB/run, already stable (good)
-
-# RAM threshold check (optional, disabled by default)
-RAM_THRESHOLD_ENABLED = False
-RAM_THRESHOLD_GB = 32  # Fail if RAM exceeds this (when enabled)
-
-# Path to vllm repo (scripts were moved from /workspace/vllm to /workspace/rlee-tools/kv-bug)
-VLLM_REPO_PATH = Path("/workspace/vllm")
-
-# File paths - scripts directory for input files, vllm repo for output
-SCRIPT_DIR = Path(__file__).parent
-LOG_DIR = VLLM_REPO_PATH / "logs"
-RESULTS_FILE = VLLM_REPO_PATH / "bisect_results.csv"
-COMMITS_FILE = SCRIPT_DIR / "filtered_commits.txt"
+LOG_DIR = Path("logs")
+RESULTS_FILE = Path("bisect_results.csv")
+COMMITS_FILE = Path("filtered_commits.txt")
 
 # Commit range to search (inclusive)
 # Set to None to use all commits in the file
@@ -148,10 +99,7 @@ CSV_COLUMNS = [
     "commit_hash", "short_hash", "timestamp", "author", "message",
     "status", "error_type", "error_message", "successful_runs",
     "mm_cache_disabled",
-    "ram_idle_mb", "ram_peak_mb", "ram_after_settle_mb",
-    "ram_decreased", "ram_decrease_percent",
-    "initial_growth_rate_mb", "final_growth_rate_mb", "growth_rate_decreased",
-    "ram_run1_mb", "ram_run2_mb", "ram_run3_mb",
+    "ram_idle_mb", "ram_run1_mb", "ram_run2_mb", "ram_run3_mb",
     "ram_run4_mb", "ram_run5_mb", "ram_run6_mb", "ram_run7_mb",
     "ram_run8_mb", "ram_run9_mb", "ram_run10_mb",
     "gpu_mem_idle_mb", "gpu_mem_run1_mb", "gpu_mem_run2_mb",
@@ -279,8 +227,7 @@ def get_current_commit() -> str:
     """Get current HEAD commit hash"""
     result = subprocess.run(
         ["git", "rev-parse", "HEAD"],
-        capture_output=True, text=True, check=True,
-        cwd=VLLM_REPO_PATH
+        capture_output=True, text=True, check=True
     )
     return result.stdout.strip()
 
@@ -290,24 +237,21 @@ def get_commit_info(commit_hash: str) -> dict:
     # Get timestamp
     result = subprocess.run(
         ["git", "show", "-s", "--format=%ci", commit_hash],
-        capture_output=True, text=True, check=True,
-        cwd=VLLM_REPO_PATH
+        capture_output=True, text=True, check=True
     )
     timestamp = result.stdout.strip()
 
     # Get author
     result = subprocess.run(
         ["git", "show", "-s", "--format=%an", commit_hash],
-        capture_output=True, text=True, check=True,
-        cwd=VLLM_REPO_PATH
+        capture_output=True, text=True, check=True
     )
     author = result.stdout.strip()
 
     # Get message (first line)
     result = subprocess.run(
         ["git", "show", "-s", "--format=%s", commit_hash],
-        capture_output=True, text=True, check=True,
-        cwd=VLLM_REPO_PATH
+        capture_output=True, text=True, check=True
     )
     message = result.stdout.strip()
 
@@ -360,73 +304,6 @@ def check_for_memory_error(output: str) -> tuple[bool, Optional[str]]:
     return False, None
 
 
-QWEN_MODEL_PATH = Path("vllm/model_executor/models/qwen2_5_vl.py")
-MOCK_MARKER = "# VLLM_MOCK_VISION_ENCODER"
-
-MOCK_CODE = '''
-        # VLLM_MOCK_VISION_ENCODER - Auto-injected mock for faster testing
-        import os as _mock_os
-        if _mock_os.environ.get("VLLM_MOCK_VISION_ENCODER") == "1":
-            mm_input_by_modality = self._parse_and_validate_multimodal_inputs(**kwargs)
-            if not mm_input_by_modality:
-                return []
-            import torch as _mock_torch
-            spatial_merge_size = self.config.vision_config.spatial_merge_size
-            out_hidden_size = self.config.vision_config.out_hidden_size
-            device = next(self.parameters()).device
-            dtype = _mock_torch.bfloat16
-            multimodal_embeddings = ()
-            for modality in mm_input_by_modality:
-                multimodal_input = mm_input_by_modality[modality]
-                if modality == "image":
-                    grid_thw = multimodal_input["image_grid_thw"]
-                elif modality == "video":
-                    grid_thw = multimodal_input["video_grid_thw"]
-                else:
-                    continue
-                sizes = (grid_thw.prod(-1) // spatial_merge_size // spatial_merge_size).tolist()
-                for num_tokens in sizes:
-                    dummy_embed = _mock_torch.zeros((num_tokens, out_hidden_size), dtype=dtype, device=device)
-                    multimodal_embeddings += (dummy_embed,)
-            return multimodal_embeddings
-        # END VLLM_MOCK_VISION_ENCODER
-'''
-
-
-def patch_source_for_mock(logger: logging.Logger) -> bool:
-    """
-    Patch qwen2_5_vl.py to add mock encoder support.
-    Returns True if patch was applied, False if already patched or failed.
-    """
-    source_file = VLLM_REPO_PATH / QWEN_MODEL_PATH
-    if not source_file.exists():
-        logger.warning(f"Source file not found: {source_file}")
-        return False
-
-    content = source_file.read_text()
-
-    # Check if already patched
-    if MOCK_MARKER in content:
-        logger.info("Source already patched for mock encoder")
-        return True
-
-    # Find the embed_multimodal method and inject mock code
-    target = "def embed_multimodal(self, **kwargs: object) -> MultiModalEmbeddings:"
-    if target not in content:
-        logger.warning(f"Could not find embed_multimodal method in {source_file}")
-        return False
-
-    # Insert mock code right after the function signature
-    patched_content = content.replace(
-        target,
-        target + MOCK_CODE
-    )
-
-    source_file.write_text(patched_content)
-    logger.info(f"Patched {source_file} with mock encoder code")
-    return True
-
-
 def get_server_cmd() -> list[str]:
     """Build server command with optional mm cache disable flag"""
     cmd = BASE_SERVER_CMD.copy()
@@ -442,30 +319,16 @@ def get_server_cmd() -> list[str]:
 
 def start_server(log_file: Path, logger: logging.Logger) -> subprocess.Popen:
     """Start vLLM server, return process handle"""
-    # Patch source code for mock encoder if enabled
-    if MOCK_ENCODER:
-        patch_source_for_mock(logger)
-
     server_cmd = get_server_cmd()
     logger.info(f"Starting server with command: {' '.join(server_cmd)}")
     logger.info(f"MM processor cache disabled: {DISABLE_MM_CACHE}")
-    logger.info(f"Vision encoder mock enabled: {MOCK_ENCODER}")
 
     with open(log_file, 'a') as f:
         f.write(f"\n{'='*60}\n")
         f.write(f"SERVER START: {datetime.now().isoformat()}\n")
         f.write(f"Command: {' '.join(server_cmd)}\n")
         f.write(f"MM processor cache disabled: {DISABLE_MM_CACHE}\n")
-        f.write(f"Vision encoder mock enabled: {MOCK_ENCODER}\n")
         f.write(f"{'='*60}\n\n")
-
-    # Prepare environment with mock encoder if enabled
-    env = os.environ.copy()
-    if MOCK_ENCODER:
-        env["VLLM_MOCK_VISION_ENCODER"] = "1"
-        # Add mock script directory to PYTHONPATH
-        mock_script_dir = str(Path(__file__).parent)
-        env["PYTHONPATH"] = f"{mock_script_dir}:{env.get('PYTHONPATH', '')}"
 
     # Open log file for appending server output
     log_handle = open(log_file, 'a')
@@ -474,9 +337,7 @@ def start_server(log_file: Path, logger: logging.Logger) -> subprocess.Popen:
         server_cmd,
         stdout=log_handle,
         stderr=subprocess.STDOUT,
-        preexec_fn=os.setsid,  # Create new process group for clean termination
-        env=env,
-        cwd=VLLM_REPO_PATH
+        preexec_fn=os.setsid  # Create new process group for clean termination
     )
 
     return process
@@ -581,8 +442,7 @@ def run_benchmark(logger: logging.Logger, log_file: Path, run_number: int,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            preexec_fn=os.setsid,  # Create new process group
-            cwd=VLLM_REPO_PATH
+            preexec_fn=os.setsid  # Create new process group
         )
 
         try:
@@ -631,26 +491,6 @@ def run_benchmark(logger: logging.Logger, log_file: Path, run_number: int,
         raise
 
 
-def calculate_growth_rate(ram_measurements: list[float], window_size: int = 3) -> float:
-    """
-    Calculate RAM growth rate in MB per run over the last window_size measurements.
-    Returns the average growth rate (can be negative if RAM is decreasing).
-    """
-    if len(ram_measurements) < 2:
-        return 0.0
-
-    # Use the last window_size measurements (or all if fewer available)
-    window = ram_measurements[-window_size:] if len(ram_measurements) >= window_size else ram_measurements
-
-    if len(window) < 2:
-        return 0.0
-
-    # Calculate average growth rate: (last - first) / (num_intervals)
-    growth = window[-1] - window[0]
-    intervals = len(window) - 1
-    return growth / intervals
-
-
 def verify_commit(commit_hash: str) -> dict:
     """
     Main verification function for a single commit.
@@ -658,16 +498,10 @@ def verify_commit(commit_hash: str) -> dict:
     1. Start server
     2. Wait for ready
     3. Record idle memory
-    4. Warmup phase: Run initial benchmarks to calculate baseline growth rate
-    5. Test phase: Continue running, track recent growth rate
-    6. Compare: If growth rate decreased sufficiently, commit is "good"
-    7. Stop server
-    8. Return results dict matching CSV columns
-
-    A commit is "good" if:
-    - Initial growth rate is very small (< MIN_GROWTH_RATE_MB per run), OR
-    - Recent growth rate is less than initial_rate * GROWTH_RATE_THRESHOLD
-    A commit is "bad" if growth rate stays high (memory leak).
+    4. Run benchmark up to 6 times
+    5. Record memory after each run
+    6. Stop server
+    7. Return results dict matching CSV columns
     """
     start_time = time.time()
     short_hash = commit_hash[:8]
@@ -718,16 +552,7 @@ def verify_commit(commit_hash: str) -> dict:
         "gpu_mem_run10_mb": None,
         "gpu_mem_peak_mb": 0.0,
         "total_duration_sec": 0.0,
-        "log_file": str(log_file),
-        # New fields for time-based approach
-        "ram_peak_mb": None,
-        "ram_after_settle_mb": None,
-        "ram_decreased": None,
-        "ram_decrease_percent": None,
-        # Growth rate stabilization fields
-        "initial_growth_rate_mb": None,
-        "final_growth_rate_mb": None,
-        "growth_rate_decreased": None,
+        "log_file": str(log_file)
     }
 
     server_process = None
@@ -749,169 +574,45 @@ def verify_commit(commit_hash: str) -> dict:
         results["ram_idle_mb"] = get_ram_mb(server_process)
         results["gpu_mem_idle_mb"] = get_gpu_mem_mb()
         results["gpu_mem_peak_mb"] = results["gpu_mem_idle_mb"]
-        results["ram_peak_mb"] = results["ram_idle_mb"]
 
         logger.info(f"Idle memory - RAM: {results['ram_idle_mb']:.1f}MB, GPU: {results['gpu_mem_idle_mb']:.1f}MB")
-        logger.info(f"Running benchmarks for {BENCHMARK_DURATION_SEC} seconds...")
-        logger.info(f"Warmup runs: {WARMUP_RUNS}, Growth rate threshold: {GROWTH_RATE_THRESHOLD}")
 
-        # Run benchmarks for the specified duration
-        benchmark_start_time = time.time()
-        run_num = 0
-
-        # Track RAM measurements for growth rate calculation
-        ram_measurements = [results["ram_idle_mb"]]
-        initial_growth_rate = None
-        ram_ever_decreased = False
-        max_decrease_percent = 0.0
-        decrease_detected_at_run = None
-
-        while time.time() - benchmark_start_time < BENCHMARK_DURATION_SEC:
-            run_num += 1
-            elapsed = time.time() - benchmark_start_time
-            remaining = BENCHMARK_DURATION_SEC - elapsed
-
-            logger.info(f"Starting run {run_num} (elapsed: {elapsed:.0f}s, remaining: {remaining:.0f}s)")
-
+        # Run benchmarks
+        for run_num in range(1, REQUIRED_SUCCESSFUL_RUNS + 1):
             success, output, error_type = run_benchmark(logger, log_file, run_num)
 
             # Record memory after run
-            current_ram = get_ram_mb(server_process)
-            current_gpu = get_gpu_mem_mb()
+            ram_key = f"ram_run{run_num}_mb"
+            gpu_key = f"gpu_mem_run{run_num}_mb"
 
-            # Check if RAM decreased compared to previous measurement
-            prev_ram = ram_measurements[-1]
-            if prev_ram > 0:
-                decrease_percent = ((prev_ram - current_ram) / prev_ram) * 100
-                if decrease_percent >= RAM_DECREASE_THRESHOLD_PERCENT:
-                    if not ram_ever_decreased:
-                        ram_ever_decreased = True
-                        decrease_detected_at_run = run_num
-                        logger.info(f"RAM DECREASE DETECTED at run {run_num}: {prev_ram:.1f}MB -> {current_ram:.1f}MB ({decrease_percent:.1f}%)")
-                    max_decrease_percent = max(max_decrease_percent, decrease_percent)
+            results[ram_key] = get_ram_mb(server_process)
+            results[gpu_key] = get_gpu_mem_mb()
+            results["gpu_mem_peak_mb"] = max(results["gpu_mem_peak_mb"], results[gpu_key])
 
-            ram_measurements.append(current_ram)
-
-            # Calculate initial growth rate after warmup phase
-            if run_num == WARMUP_RUNS and initial_growth_rate is None:
-                initial_growth_rate = calculate_growth_rate(ram_measurements, window_size=WARMUP_RUNS + 1)
-                logger.info(f"WARMUP COMPLETE: Initial growth rate = {initial_growth_rate:.2f} MB/run")
-                if initial_growth_rate < MIN_GROWTH_RATE_MB:
-                    logger.info(f"Initial growth rate ({initial_growth_rate:.2f} MB/run) < {MIN_GROWTH_RATE_MB} MB/run - memory already stable")
-
-            # Track peak RAM
-            if current_ram > results["ram_peak_mb"]:
-                results["ram_peak_mb"] = current_ram
-            results["gpu_mem_peak_mb"] = max(results["gpu_mem_peak_mb"], current_gpu)
-
-            # Store in run-specific fields if available
-            if run_num <= 10:
-                ram_key = f"ram_run{run_num}_mb"
-                gpu_key = f"gpu_mem_run{run_num}_mb"
-                results[ram_key] = current_ram
-                results[gpu_key] = current_gpu
-
-            # Log current growth rate after warmup
-            if run_num > WARMUP_RUNS:
-                current_growth_rate = calculate_growth_rate(ram_measurements, window_size=WARMUP_RUNS + 1)
-                logger.info(f"After run {run_num} - RAM: {current_ram:.1f}MB (peak: {results['ram_peak_mb']:.1f}MB), GPU: {current_gpu:.1f}MB, Growth rate: {current_growth_rate:.2f} MB/run")
-            else:
-                logger.info(f"After run {run_num} - RAM: {current_ram:.1f}MB (peak: {results['ram_peak_mb']:.1f}MB), GPU: {current_gpu:.1f}MB (warmup phase)")
-
-            # Check if RAM exceeds threshold (if enabled)
-            if RAM_THRESHOLD_ENABLED:
-                threshold_mb = RAM_THRESHOLD_GB * 1024
-                if current_ram > threshold_mb:
-                    results["status"] = "bad"
-                    results["error_type"] = "OOM"
-                    results["error_message"] = f"RAM usage ({current_ram:.1f}MB) exceeded threshold ({threshold_mb}MB / {RAM_THRESHOLD_GB}GB) after run {run_num}"
-                    results["successful_runs"] = run_num - 1
-                    logger.error(f"RAM threshold exceeded: {current_ram:.1f}MB > {threshold_mb}MB")
-                    return results
+            logger.info(f"After run {run_num} - RAM: {results[ram_key]:.1f}MB, GPU: {results[gpu_key]:.1f}MB")
 
             if not success:
                 results["status"] = "bad"
                 results["error_type"] = error_type
                 results["error_message"] = output[:500] if output else None
                 results["successful_runs"] = run_num - 1
-                logger.error(f"Benchmark failed at run {run_num}")
+                logger.error(f"Verification failed at run {run_num}")
+                return results
+
+            # Check if RAM exceeds threshold
+            if results[ram_key] > RAM_THRESHOLD_MB:
+                results["status"] = "bad"
+                results["error_type"] = "OOM"
+                results["error_message"] = f"RAM usage ({results[ram_key]:.1f}MB) exceeded threshold ({RAM_THRESHOLD_MB}MB) after run {run_num}"
+                results["successful_runs"] = run_num - 1  # Don't count this run as successful
+                logger.error(f"RAM threshold exceeded: {results[ram_key]:.1f}MB > {RAM_THRESHOLD_MB}MB")
                 return results
 
             results["successful_runs"] = run_num
 
-        logger.info(f"Benchmark phase complete. Ran {run_num} iterations.")
-        logger.info(f"Peak RAM during benchmarking: {results['ram_peak_mb']:.1f}MB")
-
-        # Also check after settle period for one more chance to detect decrease
-        logger.info(f"Waiting {RAM_SETTLE_WAIT_SEC} seconds for final RAM check...")
-        time.sleep(RAM_SETTLE_WAIT_SEC)
-
-        results["ram_after_settle_mb"] = get_ram_mb(server_process)
-        ram_measurements.append(results["ram_after_settle_mb"])
-
-        # Check if RAM decreased during settle period
-        prev_ram = ram_measurements[-2]  # Second to last (before settle)
-        if prev_ram > 0:
-            settle_decrease_percent = ((prev_ram - results["ram_after_settle_mb"]) / prev_ram) * 100
-            if settle_decrease_percent >= RAM_DECREASE_THRESHOLD_PERCENT:
-                if not ram_ever_decreased:
-                    ram_ever_decreased = True
-                    decrease_detected_at_run = "settle"
-                    logger.info(f"RAM DECREASE DETECTED during settle: {prev_ram:.1f}MB -> {results['ram_after_settle_mb']:.1f}MB ({settle_decrease_percent:.1f}%)")
-                max_decrease_percent = max(max_decrease_percent, settle_decrease_percent)
-
-        results["ram_decrease_percent"] = max_decrease_percent
-        results["ram_decreased"] = ram_ever_decreased
-
-        # Calculate final growth rate (using last few measurements including settle)
-        final_growth_rate = calculate_growth_rate(ram_measurements, window_size=WARMUP_RUNS + 1)
-
-        # Handle case where we didn't have enough runs for warmup
-        if initial_growth_rate is None:
-            initial_growth_rate = calculate_growth_rate(ram_measurements, window_size=len(ram_measurements))
-            logger.warning(f"Not enough runs for warmup phase, using all measurements for initial rate: {initial_growth_rate:.2f} MB/run")
-
-        results["initial_growth_rate_mb"] = initial_growth_rate
-        results["final_growth_rate_mb"] = final_growth_rate
-
-        logger.info(f"RAM after settle: {results['ram_after_settle_mb']:.1f}MB")
-        logger.info(f"RAM ever decreased (>={RAM_DECREASE_THRESHOLD_PERCENT}%): {ram_ever_decreased}")
-        if ram_ever_decreased:
-            logger.info(f"First decrease detected at: run {decrease_detected_at_run}, max decrease: {max_decrease_percent:.1f}%")
-
-        logger.info(f"Growth rate analysis:")
-        logger.info(f"  Initial growth rate: {initial_growth_rate:.2f} MB/run")
-        logger.info(f"  Final growth rate: {final_growth_rate:.2f} MB/run")
-        logger.info(f"  Threshold for pass: {initial_growth_rate * GROWTH_RATE_THRESHOLD:.2f} MB/run (initial * {GROWTH_RATE_THRESHOLD})")
-
-        # Determine pass/fail based on growth rate stabilization
-        growth_rate_decreased = False
-
-        # Case 1: Initial growth rate is very small (already stable)
-        if initial_growth_rate < MIN_GROWTH_RATE_MB:
-            results["status"] = "good"
-            results["growth_rate_decreased"] = True
-            growth_rate_decreased = True
-            logger.info(f"PASS: Initial growth rate ({initial_growth_rate:.2f} MB/run) < {MIN_GROWTH_RATE_MB} MB/run - memory already stable")
-
-        # Case 2: Growth rate has decreased sufficiently
-        elif final_growth_rate < initial_growth_rate * GROWTH_RATE_THRESHOLD:
-            results["status"] = "good"
-            results["growth_rate_decreased"] = True
-            growth_rate_decreased = True
-            logger.info(f"PASS: Growth rate decreased from {initial_growth_rate:.2f} to {final_growth_rate:.2f} MB/run - memory is stabilizing")
-
-        # Case 3: Growth rate stayed high (memory leak)
-        else:
-            results["status"] = "bad"
-            results["growth_rate_decreased"] = False
-            results["error_type"] = "memory_leak"
-            results["error_message"] = (
-                f"Growth rate did not decrease sufficiently. "
-                f"Initial: {initial_growth_rate:.2f} MB/run, Final: {final_growth_rate:.2f} MB/run, "
-                f"Threshold: {initial_growth_rate * GROWTH_RATE_THRESHOLD:.2f} MB/run"
-            )
-            logger.error(f"FAIL: Growth rate stayed high ({final_growth_rate:.2f} >= {initial_growth_rate * GROWTH_RATE_THRESHOLD:.2f} MB/run) - memory leak detected")
+        # All runs succeeded
+        results["status"] = "good"
+        logger.info("All benchmark runs completed successfully")
 
     except Exception as e:
         logger.exception(f"Unexpected error during verification: {e}")
@@ -932,14 +633,6 @@ def verify_commit(commit_hash: str) -> dict:
             f.write(f"\n{'='*60}\n")
             f.write(f"FINAL STATUS: {results['status']}\n")
             f.write(f"Successful runs: {results['successful_runs']}\n")
-            f.write(f"RAM idle: {results.get('ram_idle_mb', 'N/A')}MB\n")
-            f.write(f"RAM peak: {results.get('ram_peak_mb', 'N/A')}MB\n")
-            f.write(f"RAM after settle: {results.get('ram_after_settle_mb', 'N/A')}MB\n")
-            f.write(f"RAM decrease: {results.get('ram_decrease_percent', 'N/A')}%\n")
-            f.write(f"RAM decreased: {results.get('ram_decreased', 'N/A')}\n")
-            f.write(f"Initial growth rate: {results.get('initial_growth_rate_mb', 'N/A')} MB/run\n")
-            f.write(f"Final growth rate: {results.get('final_growth_rate_mb', 'N/A')} MB/run\n")
-            f.write(f"Growth rate decreased: {results.get('growth_rate_decreased', 'N/A')}\n")
             if results['error_type']:
                 f.write(f"Error type: {results['error_type']}\n")
             if results['error_message']:
@@ -985,7 +678,7 @@ def test_commit(commit: str, existing_results: dict[tuple[str, bool], str]) -> s
     # Checkout and test
     try:
         subprocess.run(["git", "checkout", commit], check=True,
-                       capture_output=True, text=True, cwd=VLLM_REPO_PATH)
+                       capture_output=True, text=True)
     except subprocess.CalledProcessError as e:
         print(f"  Failed to checkout: {e.stderr}")
         return "skip"
@@ -1028,7 +721,7 @@ def run_all_commits():
 
     # Return to original commit
     print(f"\nReturning to original commit: {original_commit[:9]}")
-    subprocess.run(["git", "checkout", original_commit], capture_output=True, cwd=VLLM_REPO_PATH)
+    subprocess.run(["git", "checkout", original_commit], capture_output=True)
     print(f"\nResults saved to {RESULTS_FILE}")
 
 
@@ -1072,7 +765,7 @@ def run_bisect():
     if oldest_status == "bad":
         print(f"\n*** Oldest commit is already bad! Bug predates this range. ***")
         print(f"First bad commit: {commit_list[0]}")
-        subprocess.run(["git", "checkout", original_commit], capture_output=True, cwd=VLLM_REPO_PATH)
+        subprocess.run(["git", "checkout", original_commit], capture_output=True)
         return
 
     print(f"\n{'='*60}")
@@ -1081,7 +774,7 @@ def run_bisect():
     newest_status = test_commit(commit_list[-1], existing_results)
     if newest_status == "good":
         print(f"\n*** Newest commit is good! Bug not in this range. ***")
-        subprocess.run(["git", "checkout", original_commit], capture_output=True, cwd=VLLM_REPO_PATH)
+        subprocess.run(["git", "checkout", original_commit], capture_output=True)
         return
 
     # Binary search
@@ -1144,16 +837,12 @@ def run_bisect():
 
     # Return to original commit
     print(f"\nReturning to original commit: {original_commit[:9]}")
-    subprocess.run(["git", "checkout", original_commit], capture_output=True, cwd=VLLM_REPO_PATH)
+    subprocess.run(["git", "checkout", original_commit], capture_output=True)
     print(f"\nResults saved to {RESULTS_FILE}")
 
 
 def main():
     global DISABLE_MM_CACHE, USE_DEPRECATED_MM_FLAG, REQUIRED_SUCCESSFUL_RUNS
-    global BENCHMARK_DURATION_SEC, RAM_SETTLE_WAIT_SEC, RAM_DECREASE_THRESHOLD_PERCENT
-    global RAM_THRESHOLD_ENABLED, RAM_THRESHOLD_GB
-    global WARMUP_RUNS, GROWTH_RATE_THRESHOLD
-    global MOCK_ENCODER
 
     parser = argparse.ArgumentParser(description="vLLM bisect verification")
     parser.add_argument("--commit", help="Specific commit to test (default: HEAD)")
@@ -1167,43 +856,14 @@ def main():
                         help="Disable multimodal processor cache (--mm-processor-cache-gb 0)")
     parser.add_argument("--disable-mm-preprocessor-cache", action="store_true",
                         help="Disable multimodal processor cache using deprecated flag (--disable-mm-preprocessor-cache)")
-    parser.add_argument("--mock-encoder", action="store_true",
-                        help="Mock vision encoder to speed up testing (returns dummy embeddings)")
     parser.add_argument("--num-runs", type=int, default=DEFAULT_REQUIRED_RUNS,
                         help=f"Number of benchmark runs required (default: {DEFAULT_REQUIRED_RUNS})")
-    parser.add_argument("--benchmark-duration", type=int, default=DEFAULT_BENCHMARK_DURATION_SEC,
-                        help=f"Duration in seconds to run benchmarks (default: {DEFAULT_BENCHMARK_DURATION_SEC})")
-    parser.add_argument("--settle-wait", type=int, default=30,
-                        help="Seconds to wait after benchmarking before checking RAM decrease (default: 30)")
-    parser.add_argument("--ram-decrease-threshold", type=float, default=1.0,
-                        help="Minimum RAM decrease percentage to pass (default: 1.0)")
-    parser.add_argument("--ram-threshold", type=float, default=None,
-                        help="Fail if RAM exceeds this many GB (e.g., --ram-threshold 32). Disabled by default.")
-    parser.add_argument("--warmup-runs", type=int, default=DEFAULT_WARMUP_RUNS,
-                        help=f"Number of initial runs for baseline growth rate (default: {DEFAULT_WARMUP_RUNS})")
-    parser.add_argument("--growth-rate-threshold", type=float, default=DEFAULT_GROWTH_RATE_THRESHOLD,
-                        help=f"How much the growth rate must decrease to pass (default: {DEFAULT_GROWTH_RATE_THRESHOLD} = 50%%). "
-                             "e.g., 0.5 means final rate must be < 50%% of initial rate")
     args = parser.parse_args()
 
     # Set global flags for mm cache
     DISABLE_MM_CACHE = args.disable_mm_cache or args.disable_mm_preprocessor_cache
     USE_DEPRECATED_MM_FLAG = args.disable_mm_preprocessor_cache
-    MOCK_ENCODER = args.mock_encoder
     REQUIRED_SUCCESSFUL_RUNS = args.num_runs
-
-    # Set time-based benchmark settings
-    BENCHMARK_DURATION_SEC = args.benchmark_duration
-    RAM_SETTLE_WAIT_SEC = args.settle_wait
-    RAM_DECREASE_THRESHOLD_PERCENT = args.ram_decrease_threshold
-
-    # Set RAM threshold settings
-    RAM_THRESHOLD_ENABLED = args.ram_threshold is not None
-    RAM_THRESHOLD_GB = args.ram_threshold if args.ram_threshold else 32
-
-    # Set growth rate stabilization settings
-    WARMUP_RUNS = args.warmup_runs
-    GROWTH_RATE_THRESHOLD = args.growth_rate_threshold
 
     LOG_DIR.mkdir(exist_ok=True)
 

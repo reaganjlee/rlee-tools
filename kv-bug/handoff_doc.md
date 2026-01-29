@@ -310,11 +310,22 @@ requests
 
 ## File Structure
 ```
-/workspace/vllm/
-├── bisect_verify.py
-├── bisect_results.csv
-└── logs/
+/workspace/rlee-tools/kv-bug/   # Debugging scripts and documentation
+├── bisect_verify.py            # Main bisect verification script
+├── analyze_results.py          # Results analysis script
+├── handoff_doc.md              # This document
+├── memory_leak_*.md            # Analysis and reports
+├── test_gc_*.py                # GC testing scripts
+├── mock_encoder.py             # Vision encoder mock
+└── filtered_commits.txt        # Target commits
+
+/workspace/vllm/                # Main vLLM repo (scripts run git commands here)
+├── bisect_results.csv          # Results output (generated)
+└── logs/                       # Per-commit log files (generated)
     ├── a55b64635....log
     ├── e15601789....log
     └── ...
 ```
+
+**Note:** The debugging scripts were moved to `/workspace/rlee-tools/kv-bug/` but are
+configured to run git operations and vllm commands in the `/workspace/vllm/` repo.

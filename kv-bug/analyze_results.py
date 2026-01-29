@@ -5,12 +5,17 @@ import pandas as pd
 from pathlib import Path
 import csv
 
+# Path to vllm repo (scripts were moved from /workspace/vllm to /workspace/rlee-tools/kv-bug)
+VLLM_REPO_PATH = Path("/workspace/vllm")
+
 # Commit range to analyze (set to None to use all)
 RANGE_START = "ad430a67c"  # Newer commit
 RANGE_END = "d100d78eb"    # Older commit
 
-# Load commit order from target_commits.csv
+# Load commit order from target_commits.csv (look in current dir first, then vllm repo)
 commits_file = Path("target_commits.csv")
+if not commits_file.exists():
+    commits_file = VLLM_REPO_PATH / "target_commits.csv"
 commit_order = []
 commit_messages = {}
 
@@ -54,8 +59,11 @@ if RANGE_START or RANGE_END:
         new_messages[commit[:8]] = commit_messages.get(commit, '')
     commit_messages = new_messages
 
-# Load results
-df = pd.read_csv("bisect_results.csv")
+# Load results (look in current dir first, then vllm repo)
+results_file = Path("bisect_results.csv")
+if not results_file.exists():
+    results_file = VLLM_REPO_PATH / "bisect_results.csv"
+df = pd.read_csv(results_file)
 
 # Filter out server_startup errors (these aren't meaningful for memory leak detection)
 df = df[df['error_type'] != 'server_startup']

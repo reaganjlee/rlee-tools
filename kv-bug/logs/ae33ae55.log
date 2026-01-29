@@ -1,0 +1,23 @@
+2026-01-29 22:40:29,872 - INFO - Starting verification for commit ae33ae55b555b3defc090dba12bac50a68ed1d52
+2026-01-29 22:40:29,882 - WARNING - Source file not found: /workspace/rlee-tools/kv-bug/vllm/model_executor/models/qwen2_5_vl.py
+2026-01-29 22:40:29,883 - INFO - Starting server with command: vllm serve Qwen/Qwen2.5-VL-3B-Instruct --limit-mm-per-prompt.video 0 --gpu-memory-utilization 0.35 --max-model-len 2048 --override-generation-config {"max_new_tokens": 1}
+2026-01-29 22:40:29,883 - INFO - MM processor cache disabled: False
+2026-01-29 22:40:29,883 - INFO - Vision encoder mock enabled: True
+
+============================================================
+SERVER START: 2026-01-29T22:40:29.883229
+Command: vllm serve Qwen/Qwen2.5-VL-3B-Instruct --limit-mm-per-prompt.video 0 --gpu-memory-utilization 0.35 --max-model-len 2048 --override-generation-config {"max_new_tokens": 1}
+MM processor cache disabled: False
+Vision encoder mock enabled: True
+============================================================
+
+2026-01-29 22:40:29,887 - INFO - Waiting for server to be ready (timeout: 120s)
+[MOCK] Import hook installed for vision encoder mock
+[sitecustomize] Mock encoder hook loaded
+[0;36m(APIServer pid=149143)[0;0m INFO 01-29 22:40:37 [api_server.py:1277] vLLM API server version 0.1.dev12623+g4f9ce35af
+[0;36m(APIServer pid=149143)[0;0m INFO 01-29 22:40:37 [utils.py:253] non-default args: {'model_tag': 'Qwen/Qwen2.5-VL-3B-Instruct', 'model': 'Qwen/Qwen2.5-VL-3B-Instruct', 'max_model_len': 2048, 'override_generation_config': {'max_new_tokens': 1}, 'gpu_memory_utilization': 0.35, 'limit_mm_per_prompt': {'video': 0}}
+[0;36m(APIServer pid=149143)[0;0m INFO 01-29 22:40:38 [model.py:522] Resolved architecture: Qwen2_5_VLForConditionalGeneration
+[0;36m(APIServer pid=149143)[0;0m INFO 01-29 22:40:38 [model.py:1510] Using max model len 2048
+[0;36m(APIServer pid=149143)[0;0m INFO 01-29 22:40:38 [scheduler.py:231] Chunked prefill is enabled with max_num_batched_tokens=2048.
+[0;36m(APIServer pid=149143)[0;0m INFO 01-29 22:40:38 [vllm.py:635] Disabling NCCL for DP synchronization when using async scheduling.
+[0;36m(APIServer pid=149143)[0;0m INFO 01-29 22:40:38 [vllm.py:640] Asynchronous scheduling is enabled.
