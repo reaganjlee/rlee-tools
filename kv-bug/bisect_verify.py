@@ -92,8 +92,8 @@ DISABLE_MM_CACHE = False
 USE_DEPRECATED_MM_FLAG = False
 MOCK_ENCODER = False  # Mock vision encoder for faster testing
 SERVER_HEALTH_URL = "http://localhost:8000/health"
-SERVER_STARTUP_TIMEOUT = 120  # 2 minutes for model download/load
-BENCHMARK_TIMEOUT = 300
+SERVER_STARTUP_TIMEOUT = 180  # 3 minutes for model download/load
+BENCHMARK_TIMEOUT = 180  # 3 minutes per benchmark run
 BENCHMARK_TIMEOUT_MM_CACHE_DISABLED = 600  # 10 minutes when mm cache is disabled
 DEFAULT_REQUIRED_RUNS = 6
 REQUIRED_SUCCESSFUL_RUNS = 6  # Can be overridden by --num-runs
@@ -119,10 +119,10 @@ RAM_THRESHOLD_GB = 32  # Fail if RAM exceeds this (when enabled)
 # Path to vllm repo (scripts were moved from /workspace/vllm to /workspace/rlee-tools/kv-bug)
 VLLM_REPO_PATH = Path("/workspace/vllm")
 
-# File paths - scripts directory for input files, vllm repo for output
+# File paths - all output goes to the scripts directory
 SCRIPT_DIR = Path(__file__).parent
-LOG_DIR = VLLM_REPO_PATH / "logs"
-RESULTS_FILE = VLLM_REPO_PATH / "bisect_results.csv"
+LOG_DIR = SCRIPT_DIR / "logs"
+RESULTS_FILE = SCRIPT_DIR / "bisect_results.csv"
 COMMITS_FILE = SCRIPT_DIR / "filtered_commits.txt"
 
 # Commit range to search (inclusive)
@@ -752,12 +752,11 @@ def verify_commit(commit_hash: str) -> dict:
         results["ram_peak_mb"] = results["ram_idle_mb"]
 
         logger.info(f"Idle memory - RAM: {results['ram_idle_mb']:.1f}MB, GPU: {results['gpu_mem_idle_mb']:.1f}MB")
-        logger.info(f"Running benchmarks for {BENCHMARK_DURATION_SEC} seconds...")
+        logger.info(f"Running {REQUIRED_SUCCESSFUL_RUNS} benchmark iterations...")
         logger.info(f"Warmup runs: {WARMUP_RUNS}, Growth rate threshold: {GROWTH_RATE_THRESHOLD}")
 
-        # Run benchmarks for the specified duration
+        # Run exactly REQUIRED_SUCCESSFUL_RUNS iterations
         benchmark_start_time = time.time()
-        run_num = 0
 
         # Track RAM measurements for growth rate calculation
         ram_measurements = [results["ram_idle_mb"]]
@@ -765,13 +764,12 @@ def verify_commit(commit_hash: str) -> dict:
         ram_ever_decreased = False
         max_decrease_percent = 0.0
         decrease_detected_at_run = None
+        first_failure_run = None  # Track first failure but continue running
 
-        while time.time() - benchmark_start_time < BENCHMARK_DURATION_SEC:
-            run_num += 1
+        for run_num in range(1, REQUIRED_SUCCESSFUL_RUNS + 1):
             elapsed = time.time() - benchmark_start_time
-            remaining = BENCHMARK_DURATION_SEC - elapsed
 
-            logger.info(f"Starting run {run_num} (elapsed: {elapsed:.0f}s, remaining: {remaining:.0f}s)")
+            logger.info(f"Starting run {run_num}/{REQUIRED_SUCCESSFUL_RUNS} (elapsed: {elapsed:.0f}s)")
 
             success, output, error_type = run_benchmark(logger, log_file, run_num)
 
@@ -830,14 +828,15 @@ def verify_commit(commit_hash: str) -> dict:
                     return results
 
             if not success:
-                results["status"] = "bad"
-                results["error_type"] = error_type
-                results["error_message"] = output[:500] if output else None
-                results["successful_runs"] = run_num - 1
-                logger.error(f"Benchmark failed at run {run_num}")
-                return results
-
-            results["successful_runs"] = run_num
+                # Record the failure but continue running all iterations for data collection
+                if first_failure_run is None:
+                    first_failure_run = run_num
+                    results["status"] = "bad"
+                    results["error_type"] = error_type
+                    results["error_message"] = output[:500] if output else None
+                logger.error(f"Benchmark failed at run {run_num} (continuing to collect data)")
+            else:
+                results["successful_runs"] = run_num if first_failure_run is None else first_failure_run - 1
 
         logger.info(f"Benchmark phase complete. Ran {run_num} iterations.")
         logger.info(f"Peak RAM during benchmarking: {results['ram_peak_mb']:.1f}MB")
