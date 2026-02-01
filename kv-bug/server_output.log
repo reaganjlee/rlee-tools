@@ -1,0 +1,3 @@
+[tracemalloc] Installed FastAPI import hook
+[tracemalloc] Started with 25 frame limit
+[tracemalloc] Snapshots will be saved to: /workspace/rlee-tools/kv-bug/snapshots
