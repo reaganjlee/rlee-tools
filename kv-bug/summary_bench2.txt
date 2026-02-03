@@ -1,0 +1,112 @@
+
+⚠  This capture file is large and may take a long time to process  ⚠
+
+Next time, consider using the `--aggregate` option to `memray run` to reduce the
+size of the file.
+Check https://bloomberg.github.io/memray/run.html#aggregated-capture-files for 
+more information.
+
+
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━┳━━━━━━━┳━━━━━━━┳━━━━━━━┓
+┃                                     ┃        ┃ Total ┃       ┃   Own ┃       ┃
+┃                                     ┃ <Total ┃ Memo… ┃   Own ┃ Memo… ┃ Allo… ┃
+┃ Location                            ┃ Memor… ┃     % ┃ Memo… ┃     % ┃ Count ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━╇━━━━━━━╇━━━━━━━╇━━━━━━━┩
+│ _run_tracker at                     │ 1.997… │ 95.1… │ 224.… │ 0.00% │ 3899… │
+│ /venv/main/lib/python3.12/site-pac… │        │       │       │       │       │
+│ run_module at <frozen runpy>        │ 1.997… │ 95.1… │ 440.… │ 0.00% │ 3899… │
+│ _find_and_load at <frozen           │ 1.403… │ 66.8… │ 21.0… │ 0.00% │ 2603… │
+│ importlib._bootstrap>               │        │       │       │       │       │
+│ _find_and_load_unlocked at <frozen  │ 1.403… │ 66.8… │ 192.… │ 0.01% │ 2603… │
+│ importlib._bootstrap>               │        │       │       │       │       │
+│ _load_unlocked at <frozen           │ 1.403… │ 66.8… │ 600.… │ 0.00% │ 2602… │
+│ importlib._bootstrap>               │        │       │       │       │       │
+│ exec_module at <frozen              │ 1.403… │ 66.8… │ 93.7… │ 0.00% │ 2602… │
+│ importlib._bootstrap_external>      │        │       │       │       │       │
+│ _call_with_frames_removed at        │ 1.403… │ 66.8… │ 1.10… │ 52.4… │ 2598… │
+│ <frozen importlib._bootstrap>       │        │       │       │       │       │
+│ _get_module_details at <frozen      │ 1.384… │ 65.9… │ 133.… │ 0.00% │ 2462… │
+│ runpy>                              │        │       │       │       │       │
+│ <module> at                         │ 1.289… │ 61.4… │ 248.… │ 0.00% │ 1698… │
+│ /workspace/vllm/vllm/entrypoints/c… │        │       │       │       │       │
+│ _handle_fromlist at <frozen         │ 1.262… │ 60.1… │ 44.0… │ 0.00% │ 1527… │
+│ importlib._bootstrap>               │        │       │       │       │       │
+│ <module> at                         │ 1.161… │ 55.3… │ 0.00… │ 0.00% │ 7184… │
+│ /workspace/vllm/vllm/entrypoints/c… │        │       │       │       │       │
+│ <module> at                         │ 1.161… │ 55.3… │ 2.37… │ 0.00% │ 7184… │
+│ /workspace/vllm/vllm/benchmarks/mm… │        │       │       │       │       │
+│ <module> at                         │ 1.161… │ 55.3… │ 2.28… │ 0.00% │ 7180… │
+│ /workspace/vllm/vllm/benchmarks/th… │        │       │       │       │       │
+│ <module> at                         │ 1.157… │ 55.1… │ 6.95… │ 0.00% │ 6850… │
+│ /workspace/vllm/vllm/benchmarks/da… │        │       │       │       │       │
+│ <module> at                         │ 1.110… │ 52.8… │ 234.… │ 0.00% │ 1965… │
+│ /venv/main/lib/python3.12/site-pac… │        │       │       │       │       │
+│ <module> at                         │ 1.075… │ 51.2… │ 2.65… │ 0.00% │ 11057 │
+│ /venv/main/lib/python3.12/site-pac… │        │       │       │       │       │
+│ <module> at                         │ 1.075… │ 51.2… │ 22.1… │ 0.00% │ 10600 │
+│ /venv/main/lib/python3.12/site-pac… │        │       │       │       │       │
+│ <module> at                         │ 1.075… │ 51.2… │ 42.3… │ 0.00% │ 10152 │
+│ /venv/main/lib/python3.12/site-pac… │        │       │       │       │       │
+│ <module> at                         │ 1.074… │ 51.2… │ 5.00… │ 0.00% │  4697 │
+│ /venv/main/lib/python3.12/site-pac… │        │       │       │       │       │
+│ <module> at                         │ 1.074… │ 51.2… │ 6.41… │ 0.00% │  4468 │
+│ /venv/main/lib/python3.12/site-pac… │        │       │       │       │       │
+│ <module> at                         │ 1.074… │ 51.2… │ 3.04… │ 0.00% │  4090 │
+│ /venv/main/lib/python3.12/site-pac… │        │       │       │       │       │
+│ _run_module_code at <frozen runpy>  │ 612.9… │ 29.2… │ 1.04… │ 0.00% │ 1437… │
+│ _run_code at <frozen runpy>         │ 612.9… │ 29.2… │ 792.… │ 0.00% │ 1437… │
+│ <module> at                         │ 612.9… │ 29.2… │ 544.… │ 0.00% │ 1437… │
+│ /workspace/vllm/vllm/entrypoints/c… │        │       │       │       │       │
+│ main at                             │ 612.9… │ 29.2… │ 1.32… │ 0.00% │ 1437… │
+│ /workspace/vllm/vllm/entrypoints/c… │        │       │       │       │       │
+│ run at                              │ 605.0… │ 28.8… │ 528.… │ 0.00% │ 1376… │
+│ /venv/main/lib/python3.12/site-pac… │        │       │       │       │       │
+│ cmd at                              │ 605.0… │ 28.8… │ 0.00… │ 0.00% │ 1376… │
+│ /workspace/vllm/vllm/entrypoints/c… │        │       │       │       │       │
+│ run at                              │ 605.0… │ 28.8… │ 156.… │ 0.01% │ 1376… │
+│ /venv/main/lib/python3.12/asyncio/… │        │       │       │       │       │
+│ wrapper at                          │ 502.8… │ 23.9… │ 41.6… │ 0.00% │ 3162… │
+│ /workspace/vllm/vllm/entrypoints/u… │        │       │       │       │       │
+│ create_chat_completion at           │ 502.7… │ 23.9… │ 17.5… │ 0.00% │ 3154… │
+│ /workspace/vllm/vllm/entrypoints/o… │        │       │       │       │       │
+│ create_chat_completion at           │ 502.7… │ 23.9… │ 109.… │ 0.01% │ 3151… │
+│ /workspace/vllm/vllm/entrypoints/o… │        │       │       │       │       │
+│ _process_inputs at                  │ 502.3… │ 23.9… │ 72.0… │ 0.00% │ 3116… │
+│ /workspace/vllm/vllm/entrypoints/o… │        │       │       │       │       │
+│ process_inputs at                   │ 502.3… │ 23.9… │ 22.4… │ 0.00% │ 3116… │
+│ /workspace/vllm/vllm/v1/engine/inp… │        │       │       │       │       │
+│ preprocess at                       │ 502.2… │ 23.9… │ 360.… │ 0.00% │ 3110… │
+│ /workspace/vllm/vllm/inputs/prepro… │        │       │       │       │       │
+│ _preprocess at                      │ 502.2… │ 23.9… │ 360.… │ 0.00% │ 3110… │
+│ /workspace/vllm/vllm/inputs/prepro… │        │       │       │       │       │
+│ _process_decoder_only_prompt at     │ 502.2… │ 23.9… │ 368.… │ 0.00% │ 3110… │
+│ /workspace/vllm/vllm/inputs/prepro… │        │       │       │       │       │
+│ _prompt_to_llm_inputs at            │ 502.2… │ 23.9… │ 400.… │ 0.00% │ 3110… │
+│ /workspace/vllm/vllm/inputs/prepro… │        │       │       │       │       │
+│ _process_tokens at                  │ 502.2… │ 23.9… │ 344.… │ 0.00% │ 3110… │
+│ /workspace/vllm/vllm/inputs/prepro… │        │       │       │       │       │
+│ _process_multimodal at              │ 502.2… │ 23.9… │ 568.… │ 0.00% │ 3110… │
+│ /workspace/vllm/vllm/inputs/prepro… │        │       │       │       │       │
+│ apply at                            │ 502.2… │ 23.9… │ 784.… │ 0.00% │ 3109… │
+│ /workspace/vllm/vllm/multimodal/pr… │        │       │       │       │       │
+│ _cached_apply_hf_processor at       │ 501.8… │ 23.9… │ 752.… │ 0.00% │ 3104… │
+│ /workspace/vllm/vllm/multimodal/pr… │        │       │       │       │       │
+│ _apply_hf_processor_main at         │ 501.2… │ 23.8… │ 72.0… │ 0.00% │ 3074… │
+│ /workspace/vllm/vllm/multimodal/pr… │        │       │       │       │       │
+│ _apply_hf_processor_mm_only at      │ 501.2… │ 23.8… │ 480.… │ 0.00% │ 3074… │
+│ /workspace/vllm/vllm/multimodal/pr… │        │       │       │       │       │
+│ _apply_hf_processor_text_mm at      │ 475.8… │ 22.6… │ 400.… │ 0.00% │  3500 │
+│ /workspace/vllm/vllm/multimodal/pr… │        │       │       │       │       │
+│ _call_hf_processor at               │ 475.8… │ 22.6… │ 1.66… │ 0.00% │  3480 │
+│ /workspace/vllm/vllm/multimodal/pr… │        │       │       │       │       │
+│ call_hf_processor at                │ 475.7… │ 22.6… │ 1.16… │ 0.00% │  3418 │
+│ /workspace/vllm/vllm/multimodal/pr… │        │       │       │       │       │
+│ json_map_leaves at                  │ 399.3… │ 19.0… │ 72.0… │ 0.00% │   430 │
+│ /workspace/vllm/vllm/utils/jsontre… │        │       │       │       │       │
+│ _postprocess_one at                 │ 399.3… │ 19.0… │ 399.… │ 19.0… │   355 │
+│ /workspace/vllm/vllm/multimodal/pr… │        │       │       │       │       │
+│ _postprocess_output at              │ 399.3… │ 19.0… │ 0.00… │ 0.00% │   355 │
+│ /workspace/vllm/vllm/multimodal/pr… │        │       │       │       │       │
+│ get_code at <frozen                 │ 133.5… │ 6.37% │ 568.… │ 0.00% │ 9561… │
+│ importlib._bootstrap_external>      │        │       │       │       │       │
+└─────────────────────────────────────┴────────┴───────┴───────┴───────┴───────┘

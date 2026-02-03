@@ -10,7 +10,7 @@ NC='\033[0m' # No Color
 # Configuration
 VLLM_REPO="https://github.com/reaganjlee/vllm.git"
 PYTHON_VERSION="3.12"
-VLLM_DIR="$HOME/vllm"
+VLLM_DIR="/workspace/vllm"
 
 # Logging functions
 log_info() {
@@ -120,7 +120,7 @@ main() {
         log_info "Adding activation alias to ~/.bashrc..."
         cat >> ~/.bashrc << 'EOF'
 # vLLM development environment
-alias activate-vllm='source $HOME/vllm/.venv/bin/activate && export VLLM_USE_PRECOMPILED=1'
+alias activate-vllm='source /workspace/vllm/.venv/bin/activate && export VLLM_USE_PRECOMPILED=1'
 EOF
     fi
     

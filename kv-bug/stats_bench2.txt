@@ -1,0 +1,47 @@
+=== Stats for bench2 (2 benchmarks) ===
+
+📏 Total allocations:
+	73787678
+
+📦 Total memory allocated:
+	18.775GB
+
+📈 Peak memory usage:
+	2.098GB
+
+📊 Histogram of allocation size:
+	min: 1.000B
+	-----------------------------------------------
+	< 8.000B   : 11056900 ▇▇▇▇▇▇▇▇▇
+	< 64.000B  : 32545933 ▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇
+	< 512.000B : 29092460 ▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇
+	< 4.096kB  :   949088 ▇
+	< 32.768kB :   124652 ▇
+	< 262.153kB:    16374 ▇
+	< 2.097MB  :     1137 ▇
+	< 16.778MB :     1067 ▇
+	< 134.225MB:       66 ▇
+	<=1.074GB  :        1 ▇
+	-----------------------------------------------
+	max: 1.074GB
+
+📂 Allocator type distribution:
+	 MALLOC: 69787762
+	 REALLOC: 2644274
+	 CALLOC: 1325778
+	 MMAP: 25091
+	 POSIX_MEMALIGN: 4773
+
+🥇 Top 5 largest allocating locations (by size):
+	- _preprocess:/venv/main/lib/python3.12/site-packages/transformers/models/qwen2_vl/image_processing_qwen2_vl_fast.py:257 -> 1.192GB
+	- _preprocess:/venv/main/lib/python3.12/site-packages/transformers/models/qwen2_vl/image_processing_qwen2_vl_fast.py:237 -> 1.192GB
+	- _preprocess:/venv/main/lib/python3.12/site-packages/transformers/models/qwen2_vl/image_processing_qwen2_vl_fast.py:268 -> 1.192GB
+	- _reconstruct:/venv/main/lib/python3.12/copy.py:261 -> 1.135GB
+	- _call_with_frames_removed:<frozen importlib._bootstrap>:488 -> 1.133GB
+
+🥇 Top 5 largest allocating locations (by number of allocations):
+	- _reconstruct:/venv/main/lib/python3.12/copy.py:261 -> 8773127
+	- __init__:/venv/main/lib/python3.12/site-packages/transformers/tokenization_utils_fast.py:117 -> 5199655
+	- fetch__all__:/venv/main/lib/python3.12/site-packages/transformers/utils/import_utils.py:2485 -> 3688278
+	- get_vocab:/venv/main/lib/python3.12/site-packages/transformers/tokenization_utils_fast.py:248 -> 2808209
+	- _create_fn:/venv/main/lib/python3.12/dataclasses.py:473 -> 2779582

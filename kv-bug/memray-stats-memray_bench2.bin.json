@@ -1,0 +1,121 @@
+{
+  "total_num_allocations": 73787678,
+  "total_bytes_allocated": 18774845791,
+  "allocation_size_histogram": [
+    {
+      "min_bytes": 0,
+      "max_bytes": 7,
+      "count": 11056900
+    },
+    {
+      "min_bytes": 8,
+      "max_bytes": 63,
+      "count": 32545933
+    },
+    {
+      "min_bytes": 64,
+      "max_bytes": 511,
+      "count": 29092460
+    },
+    {
+      "min_bytes": 512,
+      "max_bytes": 4095,
+      "count": 949088
+    },
+    {
+      "min_bytes": 4096,
+      "max_bytes": 32767,
+      "count": 124652
+    },
+    {
+      "min_bytes": 32768,
+      "max_bytes": 262152,
+      "count": 16374
+    },
+    {
+      "min_bytes": 262153,
+      "max_bytes": 2097240,
+      "count": 1137
+    },
+    {
+      "min_bytes": 2097241,
+      "max_bytes": 16778034,
+      "count": 1067
+    },
+    {
+      "min_bytes": 16778035,
+      "max_bytes": 134225099,
+      "count": 66
+    },
+    {
+      "min_bytes": 134225100,
+      "max_bytes": 1073807360,
+      "count": 1
+    }
+  ],
+  "allocator_type_distribution": {
+    "MALLOC": 69787762,
+    "REALLOC": 2644274,
+    "CALLOC": 1325778,
+    "MMAP": 25091,
+    "POSIX_MEMALIGN": 4773
+  },
+  "top_allocations_by_size": [
+    {
+      "location": "_preprocess:/venv/main/lib/python3.12/site-packages/transformers/models/qwen2_vl/image_processing_qwen2_vl_fast.py:257",
+      "size": 1192053143
+    },
+    {
+      "location": "_preprocess:/venv/main/lib/python3.12/site-packages/transformers/models/qwen2_vl/image_processing_qwen2_vl_fast.py:237",
+      "size": 1191950616
+    },
+    {
+      "location": "_preprocess:/venv/main/lib/python3.12/site-packages/transformers/models/qwen2_vl/image_processing_qwen2_vl_fast.py:268",
+      "size": 1191938188
+    },
+    {
+      "location": "_reconstruct:/venv/main/lib/python3.12/copy.py:261",
+      "size": 1135083603
+    },
+    {
+      "location": "_call_with_frames_removed:<frozen importlib._bootstrap>:488",
+      "size": 1133280468
+    }
+  ],
+  "top_allocations_by_count": [
+    {
+      "location": "_reconstruct:/venv/main/lib/python3.12/copy.py:261",
+      "count": 8773127
+    },
+    {
+      "location": "__init__:/venv/main/lib/python3.12/site-packages/transformers/tokenization_utils_fast.py:117",
+      "count": 5199655
+    },
+    {
+      "location": "fetch__all__:/venv/main/lib/python3.12/site-packages/transformers/utils/import_utils.py:2485",
+      "count": 3688278
+    },
+    {
+      "location": "get_vocab:/venv/main/lib/python3.12/site-packages/transformers/tokenization_utils_fast.py:248",
+      "count": 2808209
+    },
+    {
+      "location": "_create_fn:/venv/main/lib/python3.12/dataclasses.py:473",
+      "count": 2779582
+    }
+  ],
+  "metadata": {
+    "start_time": "2026-02-03 03:30:14.922000+00:00",
+    "end_time": "2026-02-03 03:33:02.259000+00:00",
+    "total_allocations": 143046423,
+    "total_frames": 0,
+    "peak_memory": 2098032786,
+    "command_line": "/venv/main/bin/memray run --output /workspace/rlee-tools/kv-bug/memray_bench2.bin --force --follow-fork -m vllm.entrypoints.cli.main serve Qwen/Qwen2.5-VL-3B-Instruct --limit-mm-per-prompt.video 0 --max-model-len 25000 --override-generation-config {\"max_new_tokens\": 1}",
+    "pid": 130254,
+    "main_thread_id": 1,
+    "python_allocator": "malloc",
+    "has_native_traces": false,
+    "trace_python_allocators": false,
+    "file_format": 0
+  }
+}

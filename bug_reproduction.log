@@ -1,0 +1,2 @@
+items type: ImageEmbeddingItems
+isinstance(items, (EmbeddingItems, DictEmbeddingItems)): True

@@ -1,7 +1,44 @@
 {
   "permissions": {
     "allow": [
-      "Bash(python3 -m py_compile:*)"
+      "Bash(python3 -m py_compile:*)",
+      "Bash(source .venv/bin/activate)",
+      "Bash(python:*)",
+      "Bash(vllm bench --help:*)",
+      "Bash(python3:*)",
+      "Bash(HF_HOME=/workspace/hf_cache timeout 60 python:*)",
+      "Bash(pkill:*)",
+      "Bash(curl:*)",
+      "Bash(nvidia-smi:*)",
+      "Bash(for i in {1..30})",
+      "Bash(do)",
+      "Bash(if curl -s http://localhost:8000/health)",
+      "Bash(then)",
+      "Bash(exit 0)",
+      "Bash(fi)",
+      "Bash(done)",
+      "Bash(for i in {1..60})",
+      "Bash(kill:*)",
+      "Bash(HF_HOME=/workspace/hf_cache vllm bench:*)",
+      "Bash(source /workspace/vllm/.venv/bin/activate)",
+      "Bash(pip install:*)",
+      "Bash(__NEW_LINE_a5e0a4c6ac3510de__ echo \"=== Stats for bench1 \\(1 benchmark\\) ===\")",
+      "Bash(memray stats:*)",
+      "Bash(__NEW_LINE_a5e0a4c6ac3510de__ echo \"=== Stats for bench2 \\(2 benchmarks\\) ===\")",
+      "Bash(__NEW_LINE_a5e0a4c6ac3510de__ echo \"=== Top allocators in bench1 ===\")",
+      "Bash(__NEW_LINE_a5e0a4c6ac3510de__ echo \"\")",
+      "Bash(__NEW_LINE_7ee5d55abbdacc63__ echo \"=== LEAKED memory in bench1 ===\")",
+      "Bash(__NEW_LINE_df2fa98ef5949dd5__ echo \"\")",
+      "Bash(__NEW_LINE_5fb54ddc20791700__ echo \"=== LEAKED memory in bench1 ===\")",
+      "Bash(__NEW_LINE_5fb54ddc20791700__ echo \"\")",
+      "Bash(ls:*)",
+      "Bash(source ~/workspace/vllm/.venv/bin/activate)",
+      "Bash(memray --help:*)",
+      "Bash(/venv/main/bin/memray:*)",
+      "Bash(echo:*)",
+      "Bash(gh pr view:*)",
+      "WebFetch(domain:github.com)",
+      "Bash(git checkout:*)"
     ]
   }
 }

@@ -37,8 +37,7 @@ import requests
 SERVER_ARGS = [
     "-m", "vllm.entrypoints.cli.main", "serve", "Qwen/Qwen2.5-VL-3B-Instruct",
     "--limit-mm-per-prompt.video", "0",
-    "--gpu-memory-utilization", "0.35",
-    "--max-model-len", "2048",
+    "--max-model-len", "25000",
     "--override-generation-config", '{"max_new_tokens": 1}'
 ]
 
@@ -47,13 +46,17 @@ BENCHMARK_CMD = [
     "--backend", "openai-chat",
     "--model", "Qwen/Qwen2.5-VL-3B-Instruct",
     "--endpoint", "/v1/chat/completions",
-    "--dataset-name", "random-mm",
+    "--dataset-name", "hf",
+    "--dataset-path", "lmarena-ai/VisionArena-Chat",
+    "--hf-split", "train",
     "--num-prompts", "1000"
 ]
 
 SERVER_HEALTH_URL = "http://localhost:8000/health"
 SNAPSHOT_URL = "http://localhost:8000/debug/snapshot"
-SERVER_STARTUP_TIMEOUT = 180  # 3 minutes
+TRACEMALLOC_START_URL = "http://localhost:8000/debug/tracemalloc/start"
+TRACEMALLOC_STATS_URL = "http://localhost:8000/debug/tracemalloc/stats"
+SERVER_STARTUP_TIMEOUT = 180  # 3 minutes (no tracemalloc overhead now)
 BENCHMARK_TIMEOUT = 180  # 3 minutes per benchmark run
 NUM_BENCHMARK_RUNS = 6
 POST_BENCHMARK_SLEEP = 30  # seconds to wait after final benchmark
@@ -99,16 +102,9 @@ def start_server() -> subprocess.Popen:
     server_log = SCRIPT_DIR / "server_output.log"
     log_handle = open(server_log, 'w')
 
-    # Set up environment with PYTHONPATH for tracemalloc hook
+    # Set up environment (no PYTHONPATH hook needed - endpoints are in vLLM source)
     env = os.environ.copy()
     env["HF_HOME"] = "/workspace/hf_cache"
-
-    # Prepend our hook directory to PYTHONPATH
-    existing_pythonpath = env.get("PYTHONPATH", "")
-    if existing_pythonpath:
-        env["PYTHONPATH"] = f"{TRACEMALLOC_HOOK_DIR}:{existing_pythonpath}"
-    else:
-        env["PYTHONPATH"] = str(TRACEMALLOC_HOOK_DIR)
 
     process = subprocess.Popen(
         cmd,
@@ -199,14 +195,36 @@ def stop_server(process: subprocess.Popen) -> None:
         time.sleep(1)
 
 
+def start_tracemalloc(nframes: int = 10) -> bool:
+    """Start tracemalloc on the server."""
+    try:
+        response = requests.post(f"{TRACEMALLOC_START_URL}?nframes={nframes}", timeout=10)
+        if response.status_code == 200:
+            result = response.json()
+            log(f"Tracemalloc: {result.get('status')} (frames={result.get('nframes')})")
+            return True
+        else:
+            log(f"Failed to start tracemalloc: HTTP {response.status_code}")
+            return False
+    except requests.exceptions.RequestException as e:
+        log(f"Failed to start tracemalloc: {e}")
+        return False
+
+
 def take_snapshot(label: str) -> dict:
     """Request a snapshot from the server."""
     try:
         response = requests.post(f"{SNAPSHOT_URL}?label={label}", timeout=30)
         if response.status_code == 200:
             result = response.json()
-            log(f"Snapshot '{label}': {result['current_memory_mb']:.2f} MB "
-                f"(peak: {result['peak_memory_mb']:.2f} MB)")
+            if 'error' in result:
+                log(f"Snapshot '{label}' error: {result['error']}")
+                return None
+            gpu_alloc = result.get('gpu_allocated_mb', 0)
+            gpu_reserved = result.get('gpu_reserved_mb', 0)
+            log(f"Snapshot '{label}': CPU {result['current_memory_mb']:.2f} MB "
+                f"(peak: {result['peak_memory_mb']:.2f} MB) | "
+                f"GPU alloc: {gpu_alloc:.2f} MB, reserved: {gpu_reserved:.2f} MB")
             return result
         else:
             log(f"Failed to take snapshot '{label}': HTTP {response.status_code}")
@@ -371,6 +389,11 @@ def main():
         # Give server a moment to stabilize
         time.sleep(5)
 
+        # Start tracemalloc now (lazy start - avoids startup overhead)
+        log("Starting tracemalloc on server...")
+        if not start_tracemalloc(nframes=10):
+            log("Warning: Failed to start tracemalloc")
+
         # Take baseline snapshot
         result = take_snapshot("baseline")
         if result:
@@ -414,6 +437,28 @@ def main():
 
     # Analyze snapshots
     analyze_snapshots()
+
+    # GPU memory summary from collected results
+    if snapshot_results:
+        log("=" * 60)
+        log("GPU MEMORY TREND")
+        log("=" * 60)
+        for r in snapshot_results:
+            label = r.get('label', 'unknown')
+            gpu_alloc = r.get('gpu_allocated_mb', 0)
+            gpu_reserved = r.get('gpu_reserved_mb', 0)
+            cpu_mem = r.get('current_memory_mb', 0)
+            log(f"  {label:20s}: CPU {cpu_mem:8.2f} MB | GPU alloc {gpu_alloc:8.2f} MB | reserved {gpu_reserved:8.2f} MB")
+
+        # Show deltas
+        if len(snapshot_results) >= 2:
+            first = snapshot_results[0]
+            last = snapshot_results[-1]
+            cpu_delta = last.get('current_memory_mb', 0) - first.get('current_memory_mb', 0)
+            gpu_delta = last.get('gpu_allocated_mb', 0) - first.get('gpu_allocated_mb', 0)
+            log(f"\n  GROWTH (baseline -> final):")
+            log(f"    CPU: {cpu_delta:+.2f} MB")
+            log(f"    GPU: {gpu_delta:+.2f} MB")
 
     # Summary
     log("=" * 60)

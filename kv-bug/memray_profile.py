@@ -30,8 +30,7 @@ import requests
 SERVER_ARGS = [
     "-m", "vllm.entrypoints.cli.main", "serve", "Qwen/Qwen2.5-VL-3B-Instruct",
     "--limit-mm-per-prompt.video", "0",
-    "--gpu-memory-utilization", "0.35",
-    "--max-model-len", "2048",
+    "--max-model-len", "25000",
     "--override-generation-config", '{"max_new_tokens": 1}'
 ]
 
@@ -40,20 +39,31 @@ BENCHMARK_CMD = [
     "--backend", "openai-chat",
     "--model", "Qwen/Qwen2.5-VL-3B-Instruct",
     "--endpoint", "/v1/chat/completions",
-    "--dataset-name", "random-mm",
-    "--num-prompts", "1000"
+    "--dataset-name", "hf",
+    "--dataset-path", "lmarena-ai/VisionArena-Chat",
+    "--hf-split", "train",
+    "--num-prompts", "100"  # Reduced from 1000 to save disk space
 ]
 
 SERVER_HEALTH_URL = "http://localhost:8000/health"
-SERVER_STARTUP_TIMEOUT = 180  # 3 minutes
-BENCHMARK_TIMEOUT = 180  # 3 minutes per benchmark run
-NUM_BENCHMARK_RUNS = 6
+SERVER_STARTUP_TIMEOUT = 300  # 5 minutes for larger model
+BENCHMARK_TIMEOUT = 300  # 5 minutes per benchmark run
+NUM_BENCHMARK_RUNS = 2  # Reduced from 6 - we'll run twice to compare
 
-# Output paths
+# Output paths - can be overridden via command line
 SCRIPT_DIR = Path(__file__).parent
-MEMRAY_OUTPUT = SCRIPT_DIR / "memray_output.bin"
-FLAMEGRAPH_OUTPUT = SCRIPT_DIR / "flamegraph_leaks.html"
 VLLM_REPO_PATH = Path("/workspace/vllm")
+
+# Parse command line args for run name
+import argparse
+parser = argparse.ArgumentParser()
+parser.add_argument("--run-name", default="run1", help="Name for this run (e.g., run1, run2)")
+parser.add_argument("--num-benchmarks", type=int, default=NUM_BENCHMARK_RUNS, help="Number of benchmark runs")
+args, _ = parser.parse_known_args()
+
+MEMRAY_OUTPUT = SCRIPT_DIR / f"memray_{args.run_name}.bin"
+FLAMEGRAPH_OUTPUT = SCRIPT_DIR / f"flamegraph_{args.run_name}.html"
+NUM_BENCHMARK_RUNS = args.num_benchmarks
 
 
 def log(message: str) -> None:
@@ -76,14 +86,15 @@ def get_gpu_mem_mb() -> float:
 
 def start_server_with_memray() -> subprocess.Popen:
     """Start vLLM server under memray tracking."""
-    memray_cmd = [
-        "memray", "run",
-        "--output", str(MEMRAY_OUTPUT),
-        "--force",  # Overwrite existing output file
-        "--follow-fork",
-    ] + SERVER_ARGS
+    # Build command to run inside activated venv
+    # Note: memray run needs -m for module execution
+    server_args_str = ' '.join(
+        f"'{arg}'" if '{' in arg else arg for arg in SERVER_ARGS
+    )
+    bash_cmd = f"source .venv/bin/activate && memray run --output {MEMRAY_OUTPUT} --force --follow-fork {server_args_str}"
+    memray_cmd = ["bash", "-c", bash_cmd]
 
-    log(f"Starting server with memray: {' '.join(memray_cmd)}")
+    log(f"Starting server with memray: {bash_cmd}")
 
     # Create a log file for server output
     server_log = SCRIPT_DIR / "server_output.log"
