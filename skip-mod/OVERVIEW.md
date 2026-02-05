@@ -1,145 +1,207 @@
 # Fix Embedding Input Validation for Disabled Modalities
 
-**Branch:** `fix-embedding-validation-limit-zero` in `reaganjlee/vllm`
-
+**Branch:** `skip-mod-2` in `reaganjlee/vllm`
+**Base:** `fb1270f1f` (upstream main)
 **Related PR:** #32493
 
 ## Problem Statement
 
 When using `enable_mm_embeds=True` with `limit_mm_per_prompt={"image": 0}`, embeddings should work while raw images are rejected. This allows users to:
 - Pass pre-computed image embeddings (bypassing the vision encoder)
-- Save GPU memory by not loading the encoder
+- Save GPU memory by not loading the encoder (~0.58 GiB for LLaVA 1.5 7B)
 - Disable raw image inputs for security/control
 
-## Issues Discovered
+## Issues Discovered & Fixed
 
-### Issue 1: Profiler Creates Dummy Images (`registry.py`)
+### Issue 1: Registry Text-Only Mode Blocks Embeddings (`registry.py`)
 
-**Location:** `vllm/multimodal/registry.py:176-187`
+**File:** `vllm/multimodal/registry.py`
 
-**Problem:** The PR's change included limit=0 modalities for profiling when `enable_mm_embeds=True`. The profiler creates dummy images to measure token counts, but these fail validation ("At most 0 image(s)").
+**Problem:** When all modality limits are 0, the registry enters text-only mode and disables all multimodal infrastructure. But with `enable_mm_embeds=True`, we still need that infrastructure to process pre-computed embeddings.
 
-**Fix:** Exclude limit=0 modalities from profiling. Embeddings don't need profiling since dimensions are user-defined.
+**Fix:** When `enable_mm_embeds=True`, skip the text-only short-circuit and return `True` to keep MM infrastructure alive.
 
 ```python
-# BEFORE (PR's buggy code)
-if enable_mm_embeds:
-    modality_counts = {modality: 1 for modality in profiler_limits.keys()}
-else:
-    modality_counts = {modality: 1 for modality, limit in profiler_limits.items() if limit > 0}
-
-# AFTER (fixed)
-return profiler.get_mm_max_tokens(
-    seq_len,
-    {modality: 1 for modality, limit in profiler_limits.items() if limit > 0},
-)
+if all(mm_config.get_limit_per_prompt(modality) == 0 ...):
+    # If enable_mm_embeds is True, we still need MM infrastructure
+    # to process pre-computed embeddings even though encoder won't run
+    if mm_config.enable_mm_embeds:
+        return True
+    logger.info_once("... running in text-only mode.")
+    return False
 ```
 
-### Issue 2: Parser Doesn't Recognize `image_embeds` Key (`parse.py`)
+### Issue 2: Encoder Cache Budget is (0, 0) (`budget.py`)
 
-**Location:** `vllm/multimodal/parse.py:652-664`
+**File:** `vllm/multimodal/budget.py`
 
-**Problem:** `parse_mm_data()` only recognized "audio", "image", "video" as valid keys. When users pass `{"image_embeds": tensor}`, it failed with "Unsupported modality: image_embeds".
+**Problem:** When all limits are 0, `mm_max_toks_per_item` is empty, so `compute_mm_encoder_budget()` returns (0, 0). With zero cache budget, the scheduler's `EncoderCacheManager.can_allocate()` always returns `False` — no free slots — and generation hangs indefinitely.
 
-**Fix:** Strip `_embeds` suffix and map to base modality.
-
-```python
-# BEFORE
-for k, v in mm_data.items():
-    if k not in subparsers:
-        raise ValueError(f"Unsupported modality: {k}")
-    ...
-
-# AFTER
-for k, v in mm_data.items():
-    # Handle {modality}_embeds keys (e.g., "image_embeds" -> "image")
-    if k.endswith("_embeds"):
-        modality = k[:-7]  # Remove "_embeds" suffix
-    else:
-        modality = k
-    
-    if modality not in subparsers:
-        raise ValueError(f"Unsupported modality: {k}")
-    ...
-```
-
-### Issue 3: Encoder Cache Not Initialized (`utils.py`)
-
-**Location:** `vllm/v1/worker/utils.py:48-60`
-
-**Problem:** When all limits are 0, `max_tokens_by_modality` is empty, causing `compute_mm_encoder_budget` to return (0, 0). No encoder cache is created, but embeddings still need storage. This caused generation to hang indefinitely.
-
-**Fix:** When `enable_mm_embeds=True` and cache budgets are 0, use scheduler defaults.
+**Fix:** After `compute_mm_encoder_budget()`, fall back to scheduler defaults when `enable_mm_embeds=True` and budgets are (0, 0).
 
 ```python
-# After computing encoder_compute_budget and encoder_cache_size...
 mm_config = model_config.get_multimodal_config()
 if (mm_config is not None and mm_config.enable_mm_embeds
-        and encoder_compute_budget == 0 and encoder_cache_size == 0):
+        and encoder_compute_budget == 0
+        and encoder_cache_size == 0):
     encoder_compute_budget = scheduler_config.max_num_encoder_input_tokens
     encoder_cache_size = scheduler_config.encoder_cache_size
-    logger.info(
-        "enable_mm_embeds is True with all modality limits=0. "
-        "Using default encoder cache settings for embeddings..."
-    )
 ```
 
-### Issue 4: Validation Logic Order (`processing.py`)
+**Note:** `max_num_encoder_input_tokens` and `encoder_cache_size` are derived from `max_num_batched_tokens` in `SchedulerConfig.__post_init__` — they are the standard defaults, not user-configurable values.
 
-**Location:** `vllm/multimodal/processing.py:1582-1597`
+### Issue 3: Validation Logic Order (`context.py`)
 
-**Problem:** Original logic had flawed order - it checked limit=0 before checking if input was an embedding, causing it to skip validation for ALL inputs (not just embeddings).
+**File:** `vllm/multimodal/processing/context.py` → `parse_mm_data()`
 
-**Fix:** Check if input is embedding first, then apply appropriate validation.
+**Problem:** Upstream's validation had two separate loops: one checking for embedding inputs (raising error if `enable_mm_embeds=False`), then another validating all items against limits. This structure couldn't express "skip validation for embeddings when limit=0" — raw images with limit=0 would also need to be rejected.
+
+**Fix:** Merge into a single loop that checks embedding type first, then applies the right logic:
 
 ```python
 for modality, items in mm_items.items():
     if isinstance(items, (EmbeddingItems, DictEmbeddingItems)):
         if not mm_config.enable_mm_embeds:
-            raise ValueError(f"You must set `--enable-mm-embeds` to input `{modality}_embeds`")
+            raise ValueError(f"You must set `--enable-mm-embeds` ...")
         if mm_config.get_limit_per_prompt(modality) == 0:
-            logger.info(f"Skipping count validation for modality '{modality}' (embeddings with limit=0)")
+            logger.info("Skipping count validation for modality '%s' ...", modality)
             continue
     self.validate_num_items(modality, len(items))
 ```
 
+### Issue 4: Chat API Item Tracker Validation (`chat_utils.py`)
+
+**File:** `vllm/entrypoints/chat_utils.py` → `BaseMultiModalItemTracker.add()`
+
+**Problem:** The chat API validates item counts as items are added. For embeddings with limit=0, this validation needs to be skipped. The check must verify the input is actually an embedding (via `_embeds` suffix) to avoid skipping validation for raw images.
+
+**Fix:**
+```python
+mm_config = self.model_config.multimodal_config
+if (
+    mm_config is not None
+    and mm_config.enable_mm_embeds
+    and mm_config.get_limit_per_prompt(input_modality) == 0
+    and original_modality.endswith("_embeds")
+):
+    pass  # Skip validation for embeddings with limit=0
+else:
+    self.mm_processor.info.validate_num_items(input_modality, num_items)
+```
+
+### Issue 5: Profiler Crash on Empty Modalities (`gpu_model_runner.py`)
+
+**File:** `vllm/v1/worker/gpu_model_runner.py` → `profile_run()`
+
+**Problem:** The Issue 2 fallback sets a non-zero `encoder_budget`, causing `profile_run()` to enter the profiling branch. But `mm_max_toks_per_item` is empty (no active modalities), so `get_modality_with_max_tokens()` calls `max()` on an empty dict → crash.
+
+**Fix:** Check for empty `mm_max_toks_per_item` and skip profiling. There's no encoder to profile in embedding-only mode.
+
+```python
+if (encoder_budget := mm_budget.get_encoder_budget()) > 0:
+    if not mm_budget.mm_max_toks_per_item:
+        logger.info("Skipping encoder profiling for embedding-only mode ...")
+    else:
+        dummy_modality = mm_budget.get_modality_with_max_tokens()
+        # ... existing profiling logic ...
+```
+
+### Issue 6: Scheduler Crash on Empty Modalities (`scheduler.py`)
+
+**File:** `vllm/v1/core/sched/scheduler.py`
+
+**Problem:** Same as Issue 5 but in the scheduler: `get_modality_with_max_tokens()` crashes on empty `mm_max_toks_per_item`.
+
+**Fix:** Guard with empty dict check.
+
+```python
+self._num_encoder_max_input_tokens = (
+    mm_budget.mm_max_toks_per_item[mm_budget.get_modality_with_max_tokens()]
+    if mm_budget and mm_budget.mm_max_toks_per_item
+    else 0
+)
+```
+
+### Doc Update (`config/multimodal.py`)
+
+Updated `enable_mm_embeds` docstring to clarify that only `limit=0` gets special treatment. Positive limits still apply to embeddings normally.
+
 ## Files Modified
 
-| File | Description |
-|------|-------------|
-| `vllm/multimodal/registry.py` | Remove limit=0 modality profiling |
-| `vllm/multimodal/parse.py` | Handle `{modality}_embeds` keys |
-| `vllm/v1/worker/utils.py` | Encoder cache fallback for embeddings |
-| `vllm/multimodal/processing.py` | Fix validation logic order |
+| File | Issue | Description |
+|------|-------|-------------|
+| `vllm/multimodal/registry.py` | 1 | Keep MM infrastructure alive when embeds enabled |
+| `vllm/multimodal/budget.py` | 2 | Encoder cache fallback for embedding-only mode |
+| `vllm/multimodal/processing/context.py` | 3 | Validation logic: skip for embeddings with limit=0 |
+| `vllm/entrypoints/chat_utils.py` | 4 | Chat API: skip validation for `_embeds` with limit=0 |
+| `vllm/v1/worker/gpu_model_runner.py` | 5 | Skip encoder profiling when no modalities |
+| `vllm/v1/core/sched/scheduler.py` | 6 | Guard empty dict in modality lookup |
+| `vllm/config/multimodal.py` | — | Doc clarification |
 
-## Expected Behaviors
+## Expected Behaviors (All Verified)
 
 | Config | Input Type | Expected Result |
 |--------|-----------|-----------------|
-| `enable_mm_embeds=True`, `limit=0` | Embedding | ✓ Works (skip validation) |
-| `enable_mm_embeds=True`, `limit=0` | Raw image | ✗ ValueError: At most 0 image(s) |
-| `enable_mm_embeds=False`, `limit=0` | Embedding | ✗ ValueError: must set --enable-mm-embeds |
-| `enable_mm_embeds=False`, `limit=0` | Raw image | ✗ ValueError: At most 0 image(s) |
+| `enable_mm_embeds=True`, `limit=0` | Embedding | Works (skip validation) |
+| `enable_mm_embeds=True`, `limit=0` | Raw image | `ValueError: At most 0 image(s)` |
+| `enable_mm_embeds=True`, `limit=5` | Embedding | Validated against limit normally |
+| `enable_mm_embeds=False`, `limit=0` | Embedding | `ValueError: must set --enable-mm-embeds` |
+| `enable_mm_embeds=False`, `limit=0` | Raw image | `ValueError: At most 0 image(s)` |
 
 ## Testing
 
-Run the test script:
+### Unit Tests (fast, no GPU needed)
+
 ```bash
 source /workspace/vllm/.venv/bin/activate
-python test_embed_simple.py
+
+# Disabled modality logic tests (17 tests)
+pytest tests/multimodal/test_embed_disabled_modality_unit.py -v \
+    --override-ini="confcutdir=tests/multimodal"
+
+# Embedding shape validation tests (18 tests)
+pytest tests/multimodal/test_embedding_shape_validation_unit.py -v \
+    --override-ini="confcutdir=tests/multimodal"
 ```
 
-**Note:** The embedding format must be a **list of 2D tensors** (each tensor is `[num_tokens, hidden_dim]`), not a single 2D tensor.
+### Integration Tests (requires GPU + llava-hf/llava-1.5-7b-hf)
+
+```bash
+source /workspace/vllm/.venv/bin/activate
+python test_embedding_disabled_modality.py
+# 6 passed, 0 failed, 0 errors
+```
 
 ## Memory Verification
 
-- With `limit=0`: Model loads ~12.5 GiB (encoder not loaded)
-- Without limit restriction: Model loads ~13.1 GiB (encoder loaded)
+| Config | Memory | Notes |
+|--------|--------|-------|
+| `limit=0`, `enable_mm_embeds=True` | 12.55 GiB | Encoder not profiled |
+| Default (no limit) | 13.13 GiB | Encoder loaded + profiled |
+| **Savings** | **~0.58 GiB** | |
 
-## Status
+## Why the Encoder Cache is Needed for Pre-computed Embeddings
 
-- [x] Issue 1 fixed (registry.py)
-- [x] Issue 2 fixed (parse.py)
-- [x] Issue 3 fixed (utils.py)
-- [x] Issue 4 fixed (processing.py)
-- [ ] Full test suite verification pending (Test 1 & 3 need revalidation after utils.py fix)
+The "encoder cache" name is misleading — it's the **storage manager for all multimodal embeddings** during request processing, not just for caching encoder computation. Even pre-computed embeddings must be:
+- **Stored** in GPU memory during generation
+- **Tracked** by the scheduler so it knows when to feed them to the model
+- **Freed** when the request finishes
+
+Without a non-zero cache budget, the scheduler's `EncoderCacheManager.can_allocate()` always returns `False` (no free slots), so it never schedules the encoder inputs and the request hangs indefinitely.
+
+## Why the Fallback is in `budget.py` (Not `get_mm_max_toks_per_item`)
+
+A reviewer asked: why not modify `get_mm_max_toks_per_item` to return a synthetic entry instead of adding a budget fallback?
+
+The problem is `mm_max_toks_per_item` flows into **profiling** (`gpu_model_runner.py`). If it contained `{"image": 576}`, the profiler would call `_get_mm_dummy_batch("image", N)` which creates dummy raw images and runs them through the encoder — hitting `ValueError: At most 0 image(s)`. The current approach correctly separates "we need cache space" (budget fallback) from "we have modalities to profile" (empty dict → skip profiling).
+
+## Test Files
+
+| File | Type | Count | Description |
+|------|------|-------|-------------|
+| `test_embed_disabled_modality_unit.py` | pytest | 17 | Unit tests for all fix logic |
+| `test_embedding_shape_validation_unit.py` | pytest | 18 | Shape validation unit tests |
+| `test_embedding_disabled_modality.py` | standalone | 6 | Full integration with LLM |
+| `test_embedding_shape_validation.py` | pytest | — | OpenAI endpoint shape tests |
+| `test_embed_simple.py` | standalone | — | Simple embedding smoke test |
+| `test_embed_v0.py` | standalone | — | Earlier test script |

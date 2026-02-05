@@ -32,9 +32,8 @@ def test_embedding_with_embeds_enabled_limit_zero():
             enforce_eager=True,
         )
 
-        # Create a dummy embedding as list of 2D tensors (correct format)
-        # 576 tokens x 4096 hidden dim for LLaVA 1.5
-        dummy_embedding = [torch.randn(576, 4096, dtype=torch.float16)]
+        # Create a dummy embedding (576 tokens x 4096 hidden dim for LLaVA 1.5)
+        dummy_embedding = torch.randn(576, 4096, dtype=torch.float16)
 
         prompt = "<image>\nUSER: Describe this image.\nASSISTANT:"
         sampling_params = SamplingParams(max_tokens=50, temperature=0.0)
@@ -121,8 +120,8 @@ def test_embedding_with_embeds_disabled_limit_zero():
             enforce_eager=True,
         )
 
-        # Create a dummy embedding as list of 2D tensors (correct format)
-        dummy_embedding = [torch.randn(576, 4096, dtype=torch.float16)]
+        # Create a dummy embedding
+        dummy_embedding = torch.randn(576, 4096, dtype=torch.float16)
 
         prompt = "<image>\nUSER: Describe this image.\nASSISTANT:"
         sampling_params = SamplingParams(max_tokens=50, temperature=0.0)
