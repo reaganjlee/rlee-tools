@@ -4,7 +4,7 @@
 
 The main repository you'll be working on is:
 ```
-~/workspace/vllm
+/workspace/vllm
 ```
 
 ## Environment Setup
