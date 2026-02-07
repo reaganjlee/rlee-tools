@@ -34,20 +34,20 @@ An optional `modality_types: list[str] | None = None` parameter was added to `em
 
 - **Worktree**: `/workspace/vllm-embed-shape`
 - **Branch**: `embed-shape`
-- **Base**: `4f9ce35af` ([CI][Bugfix] Fix token counting in chunked prefill compl test)
+- **Base**: `bc32444b2` ([Kernel] Add enable_sm120_or_later for SM121 (DGX Spark) CUTLASS support)
 
 ## Testing
 
-All runnable tests pass (42/42):
+All tests pass (87/87 passed, 28 skipped):
 
 | Test Suite | Result |
 |---|---|
 | `tests/model_executor/test_qwen3_omni.py` | 1/1 passed |
 | `tests/multimodal/test_embedding_shape_validation_unit.py` | 18/18 passed |
 | `tests/v1/worker/test_gpu_model_runner.py` | 23/23 passed |
-| `tests/v1/spec_decode/test_eagle.py` | Skipped — requires HF gated model access (pre-existing, unrelated) |
+| `tests/v1/spec_decode/test_eagle.py` | 45/45 passed, 28 skipped (TRITON_ATTN/TREE_ATTN variants requiring unavailable backends — pre-existing, unrelated) |
 
 ## Notes
 
 - The original commit on `skip-mod-2` (`8385b5346`) mixed this change with `budget.py` modifications. The cherry-pick into `embed-shape` excluded `budget.py` and also removed a stray `mm_max_toks_per_item` guard that belonged to the budget refactor.
-- A merge conflict in `gpu_model_runner.py` was resolved during cherry-pick: the embed-shape branch had refactored `is_mm_embed` buffer handling (`self.is_mm_embed.cpu` vs the old `is_mm_embed_buf.cpu`). The resolution kept the embed-shape version and added the new `mm_modalities` tracking on top.
+- Rebased onto updated upstream main (`bc32444b2`). A merge conflict in `gpu_model_runner.py` was resolved: upstream refactored `is_mm_embed` buffer access from `self.is_mm_embed.cpu` to `is_mm_embed_buf.cpu`. The resolution kept upstream's buffer naming and added the new `mm_modalities` tracking on top.

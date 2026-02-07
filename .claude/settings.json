@@ -2,6 +2,7 @@
   "permissions": {
     "allow": [
       "Bash(source *)",
+      "Bash(echo:*)",
       "Bash(python *)",
       "Bash(python3 *)",
       "Bash(cd *)",
