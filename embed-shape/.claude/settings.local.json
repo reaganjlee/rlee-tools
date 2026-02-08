@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ln -s:*)",
+      "Bash(source:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(pip install:*)",
+      "Bash(python:*)",
+      "Bash(pip show:*)",
+      "Bash(VLLM_USE_PRECOMPILED=1 pip install:*)",
+      "Bash(huggingface-cli whoami:*)",
+      "Bash(git remote add:*)",
+      "Bash(git fetch:*)",
+      "Bash(git checkout:*)",
+      "Bash(git pull:*)",
+      "Bash(git rebase:*)",
+      "Bash(git add:*)",
+      "Bash(xargs git log --oneline -1)",
+      "Bash(git log:*)"
+    ]
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(echo:*)",
+      "Bash(git checkout:*)",
+      "Bash(git pull:*)",
+      "Bash(source:*)",
+      "Bash(pytest:*)",
+      "Bash(TMPDIR=/workspace du:*)",
+      "Bash(pre-commit run:*)",
+      "Bash(python -m pytest tests/multimodal/test_processing.py::test_budget_caps_prevent_dummy_input_validation_failure -v --timeout=120)",
+      "Bash(python -m pytest:*)"
+    ]
+  }
+}

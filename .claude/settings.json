@@ -17,7 +17,9 @@
       "Bash(git -C *)",
       "Bash(git worktree *)",
       "Bash(pytest *)",
-      "Bash(uv *)"
+      "Bash(uv *)",
+      "Bash(gh pr view:*)",
+      "WebFetch(domain:github.com)"
     ],
     "deny": [
       "Bash(git push *)",

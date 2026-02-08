@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git worktree:*)",
+      "Bash(source:*)",
+      "Bash(ruff check:*)",
+      "Bash(git checkout:*)",
+      "Bash(python -m ruff check:*)",
+      "Bash(pip install:*)",
+      "Bash(find:*)",
+      "Bash(git fetch:*)",
+      "Bash(git rebase:*)",
+      "Bash(git add:*)",
+      "Bash(git branch:*)"
+    ]
+  }
+}
